@@ -7,9 +7,13 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Stack;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
+import org.apache.commons.collections4.comparators.ComparableComparator;
+import org.apache.commons.lang.NumberUtils;
 import org.apache.commons.lang.StringUtils;
 
 import com.atlassian.jira.rest.client.api.IssueRestClient;
@@ -61,11 +65,14 @@ public class JiraApplication {
 	public static void main(String[] args) throws IOException {
 		// SpringApplication.run(BalanceteApplication.class, args);
 
+		// timer
+		long startTime = System.nanoTime();
+		
 		JiraApplication myJiraClient = new JiraApplication("xb204243", "Onvf!0404", "http://jira.produbanbr.corp");
 
 		String project = "PPJWPBR";
 		
-		String jql = "project = " + project + " AND issuetype in standardIssueTypes() AND issueType != Epic AND ID = PPJWPBR-881"; // AND id = PPJWPBR-881";
+		String jql = "project = " + project + " AND issuetype in standardIssueTypes() AND issueType != Epic"; // AND id = PPJWPBR-881";
 		int maxPerQuery = 100;
 		int startIndex = 0;
 		List<com.devfuncionar.jirametrics.domain.Issue> issues = new ArrayList<>();
@@ -87,7 +94,7 @@ public class JiraApplication {
 					final Issue _issue = issueRestClient.getIssue(issue.getKey(), expand).claim();
 					IssueType type = _issue.getIssueType();
 
-					if (!type.isSubtask()) {
+//					if (!type.isSubtask()) {
 						
 						// TODO: all
 						com.devfuncionar.jirametrics.domain.Issue newIssue = new com.devfuncionar.jirametrics.domain.Issue();
@@ -95,23 +102,29 @@ public class JiraApplication {
 						newIssue.setCreated(_issue.getCreationDate().toDate());
 						newIssue.setDescription(_issue.getSummary());
 						newIssue.setType(_issue.getIssueType().getName());
-						newIssue.addStatus(new Status(_issue.getCreationDate().toDate(), StatusEn.TEAM_BACKLOG));
+//						newIssue.addStatus(new Status(_issue.getCreationDate().toDate(), StatusEn.TEAM_BACKLOG));
 						
 						String team = project;
 						
-						if(_issue.getSummary().indexOf("[") != -1 && _issue.getSummary().indexOf("]") != -1) {
-							team = _issue.getSummary().substring(_issue.getSummary().indexOf("[")+1, _issue.getSummary().indexOf("]"));
+//						if(_issue.getSummary().indexOf("[") != -1 && _issue.getSummary().indexOf("]") != -1) {
+//							team = _issue.getSummary().substring(_issue.getSummary().indexOf("[")+1, _issue.getSummary().indexOf("]"));
+//						}
+						
+						if(_issue.getSummary().startsWith("[")) {
+							team = StringUtils.substringBetween(_issue.getSummary(), "[", "]");
 						}
 						
 						newIssue.setTeam(team);
 						
 						System.out.println("----------------------------");
-						System.out.println(_issue.getKey() + " - Type: " + type.getName());
+//						System.out.println(_issue.getKey() + " - Type: " + type.getName());
+						System.out.println(issue.getKey() + " - Type: " + issue.getIssueType().getName());
 						System.out.println("----------------------------");
 
 						if (_issue.getChangelog() != null) {
 							
-							List<Status> status = new ArrayList<>();
+							Stack<Status> status = new Stack<>();
+							status.push(new Status(_issue.getCreationDate().toDate(), StatusEn.TEAM_BACKLOG));
 
 							for (ChangelogGroup changelogGroup : _issue.getChangelog()) {
 								for (ChangelogItem changelogItem : changelogGroup.getItems()) {
@@ -128,8 +141,12 @@ public class JiraApplication {
 												+ changelogItem.getFromString() + "' to '"
 												// + changelogItem.getTo() + "' and string '"
 												+ changelogItem.getToString() + "'");
-
-										status.add(new Status(changelogGroup.getCreated().toDate(), StatusEn.getByDescription(changelogItem.getToString().toUpperCase())));
+										
+										Status _status = new Status(changelogGroup.getCreated().toDate(), StatusEn.getByDescription(changelogItem.getToString().toUpperCase()));
+										
+										if (_status.getStatus() != null && status.peek().getStatus().getStep() < _status.getStatus().getStep()) {
+											status.push(_status);
+										}
 									}
 								}
 							}
@@ -138,7 +155,7 @@ public class JiraApplication {
 						
 						issues.add(newIssue);
 						System.out.println("----------------------------");
-					}
+//					}
 				}
 
 				if (startIndex >= results.getTotal()) {
@@ -148,11 +165,17 @@ public class JiraApplication {
 				startIndex += maxPerQuery;
 
 				System.out.println("Fetching from Index: " + startIndex);
+				long endTime = System.nanoTime();
+				
+				long duration = (endTime - startTime);
+				
+				System.out.println("Search Time: " + TimeUnit.NANOSECONDS.toSeconds(duration) + "s");
 			}
 
 		} finally {
 			restClient.close();
 		}
+		
         
 		try {
 			
